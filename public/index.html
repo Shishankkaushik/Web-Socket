@@ -1,0 +1,367 @@
+<!-- <!DOCTYPE html>
+<html>
+
+<head>
+  <title>Multiplayer Rooms</title>
+</head>
+
+<body>
+  <input id="nameInput" placeholder="Enter Your Name">
+  <input id="roomInput" placeholder="Enter Room Name">
+  <button onclick="joinRoom()">Join Room</button>
+  <button onclick="leaveRoom()">Leave Room</button>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    socket.emit('pay-game-fee', { roomName });
+
+    socket.on('payment-success', () => {
+      console.log('✅ Payment successful!');
+    });
+
+
+    function joinRoom() {
+      const roomName = document.getElementById('roomInput').value;
+      const playerName = document.getElementById('nameInput').value;
+      if (!roomName || !playerName) {
+        alert("Please enter both player name and room name.");
+        return;
+      }
+
+      socket.emit('join-room', { roomName, playerName });
+    }
+
+    function leaveRoom() {
+      const roomName = document.getElementById('roomInput').value;
+      const playerName = document.getElementById('nameInput').value;
+      //  if (!roomName || !playerName) {
+      //   alert("Please enter both player name and room name.");
+      //   return;
+      // }
+
+      socket.emit('leave-room', { roomName, playerName });
+    }
+
+    socket.on('user-joined', ({ playerId, playerName }) => {
+      console.log(`Player ${playerName} (${playerId}) joined your room.`);
+    });
+
+    socket.on('user-leaved', ({ playerId, playerName }) => {
+      console.log(`Player ${playerName} (${playerId}) leaved your room.`);
+    });
+
+    socket.on('game-action', (data) => {
+      console.log(`Received action from ${data.playerId}:`, data.action);
+    });
+  </script>
+</body>
+
+</html> -->
+
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Multiplayer Rooms</title>
+</head>
+
+<body>
+  <h1>Multiplayer Game</h1>
+  <input id="nameInput" placeholder="Enter Your Name">
+  <input id="roomInput" placeholder="Enter Room Name">
+  <button onclick="payThenJoin()">Pay & Join</button>
+  <button onclick="leaveRoom()">Leave Room</button>
+  <button onclick="showRooms()">Show Rooms</button>
+  <button onclick="showPlayers()">Show Players</button>
+
+  <button onclick="declareWinner()">Declare Me Winner</button>
+  <button onclick="rollDice()">🎲 Roll Dice</button>
+
+
+
+  <h3>Select Entry Fee</h3>
+  <button onclick="selectAmount(10)">₹10</button>
+  <button onclick="selectAmount(50)">₹50</button>
+  <button onclick="selectAmount(100)">₹100</button>
+
+  <p id="selectedAmountText">Selected: ₹0</p>
+
+
+  <ul id="roomListDisplay"></ul>
+  <ul id="playerListDisplay"></ul>
+
+  <p id="statusText">Status: Not connected</p>
+
+ <h1>Create User Profile</h1>
+
+  <form id="profileForm">
+    <input type="text" id="username" placeholder="Username" required><br><br>
+    <input type="email" id="email" placeholder="Email" required><br><br>
+    <input type="number" id="age" placeholder="Age" required><br><br>
+
+    <input type="text" id="user_id" placeholder="User ID" required><br><br>
+    <input type="text" id="user_token" placeholder="User Token" required><br><br>
+    <input type="text" id="device_token" placeholder="Device Token" required><br><br>
+    <input type="text" id="my_token" placeholder="My Token" required><br><br>
+
+    <button type="submit">Submit Profile</button>
+  </form>
+
+  <p id="responseMessage"></p>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let currentRoom = '';
+    let currentPlayer = '';
+    let alreadyPaid = false;
+    let selectedAmount = 0;
+
+     const form = document.getElementById("profileForm");
+    const message = document.getElementById("responseMessage");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const profileData = {
+        username: document.getElementById("username").value,
+        email: document.getElementById("email").value,
+        age: document.getElementById("age").value,
+        user_id: document.getElementById("user_id").value,
+        user_token: document.getElementById("user_token").value,
+        device_token: document.getElementById("device_token").value,
+        my_token: document.getElementById("my_token").value,
+      };
+
+      try {
+        const res = await fetch("/api/v1/profile", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "authToken": "MySecretPublicToken123" // ✅ match this with server
+  },
+  body: JSON.stringify(profileData),
+});
+
+        const result = await res.json();
+
+        if (res.ok && result.success !== false) {
+          message.innerText = "✅ Profile created! ID: " + result.id;
+          message.style.color = "green";
+        } else {
+          message.innerText = "❌ Failed: " + (result.message || "Unknown error");
+          message.style.color = "red";
+        }
+
+        console.log("✅ Server Response:", result);
+      } catch (err) {
+        console.error("❌ Network Error:", err);
+        message.innerText = "❌ Network error";
+        message.style.color = "red";
+      }
+    });
+
+
+    function showRooms() {
+      socket.emit('get-room-list');
+    }
+
+    function showPlayers() {
+      socket.emit('get-player-list');
+    }
+
+    function declareWinner() {
+      socket.emit('declare-winner', {
+        roomName: currentRoom,
+        winnerId: socket.id
+      });
+    }
+
+    function rollDice() {
+      if (!currentRoom) {
+        alert("Please join a room first.");
+        return;
+      }
+
+      socket.emit('roll-dice', { roomName: currentRoom });
+    }
+
+    socket.emit('upload-to-cloud');
+
+    socket.on('upload-success', ({ url }) => {
+      console.log('Uploaded:', url);
+    });
+
+    socket.on('upload-failed', ({ error }) => {
+      console.error('Failed:', error);
+    });
+
+    socket.on('game-result', async ({ result, message }) => {
+      if (result === 'win') {
+        alert(`🏆 ${message}`);
+        document.getElementById('statusText').innerText = `🏆 ${message}`;
+      } else if (result === 'lose') {
+        alert(`😢 ${message}`);
+        document.getElementById('statusText').innerText = `😢 ${message}`;
+      }
+
+      // Refresh profile data
+      await showProfile();
+    });
+
+
+    socket.on('dice-rolled', ({ playerId, playerName, dice }) => {
+      console.log(`🎲 ${playerName} rolled a ${dice}`);
+      alert(`🎲 ${playerName} rolled a ${dice}`);
+    });
+
+    socket.on('your-turn', ({ message }) => {
+      console.log(message);
+      document.getElementById('statusText').innerText = message;
+    });
+
+    socket.on('not-your-turn', () => {
+      alert("⛔ It's not your turn!");
+    });
+
+
+
+    socket.on('game-result', ({ result, message }) => {
+      if (result === 'win') {
+        alert(`🏆 ${message}`);
+        document.getElementById('statusText').innerText = `🏆 ${message}`;
+      } else if (result === 'lose') {
+        alert(`😢 ${message}`);
+        document.getElementById('statusText').innerText = `😢 ${message}`;
+      }
+    });
+
+
+    socket.on('room-list', (rooms) => {
+      console.log('Room List:', rooms);
+
+      const listContainer = document.getElementById('roomListDisplay');
+      listContainer.innerHTML = "";
+
+      if (rooms.length === 0) {
+        listContainer.innerHTML = '<li>No active rooms</li>';
+        return;
+      }
+
+      rooms.forEach(room => {
+        const li = document.createElement('li');
+        li.textContent = room;
+        listContainer.appendChild(li);
+      });
+    });
+
+    socket.on('player-list', (players) => {
+      console.log('Player List:', players);
+
+      const listContainer = document.getElementById('playerListDisplay');
+      listContainer.innerHTML = "";
+
+      if (players.length === 0) {
+        listContainer.innerHTML = '<li>No active players</li>';
+        return;
+      }
+
+      players.forEach(playerName => {
+        const li = document.createElement('li');
+        li.textContent = playerName;
+        listContainer.appendChild(li);
+      });
+    });
+
+    function sendMessage(msg) {
+      socket.emit('send-message', msg);
+    }
+
+    // function payThenJoin() {
+    //   const roomName = document.getElementById('roomInput').value;
+    //   const playerName = document.getElementById('nameInput').value;
+
+    //   if (!roomName || !playerName) {
+    //     alert("Please enter both player name and room name.");
+    //     return;
+    //   }
+
+    //   currentRoom = roomName;
+    //   currentPlayer = playerName;
+    //   alreadyPaid = false;
+    // }
+
+    //   // 🔐 Step 1: Pay before joining
+    //   document.getElementById('statusText').innerText = 'Paying ₹100...';
+    //   socket.emit('pay-game-fee', { roomName, playerName });
+    // }
+
+    function leaveRoom() {
+      if (currentRoom && currentPlayer) {
+        socket.emit('leave-room', { roomName: currentRoom, playerName: currentPlayer });
+        document.getElementById('statusText').innerText = 'Status: Left room';
+        currentRoom = '';
+        currentPlayer = '';
+        alreadyPaid = false;
+      }
+    }
+
+    socket.on('payment-success', () => {
+      document.getElementById('statusText').innerText = '✅ Payment done. Joining room...';
+      alreadyPaid = true;
+      // 🔁 Step 2: Only now join the room
+      socket.emit('join-room', { roomName: currentRoom, playerName: currentPlayer });
+    });
+
+    socket.on('payment-failed', ({ reason }) => {
+      document.getElementById('statusText').innerText = '❌ Payment failed: ${reason}';
+      alreadyPaid = false;
+    });
+
+
+    function selectAmount(amount) {
+      selectedAmount = amount;
+      document.getElementById('selectedAmountText').innerText = `Selected: ₹${amount}`;
+    }
+
+    function payThenJoin() {
+      const roomName = document.getElementById('roomInput').value;
+      const playerName = document.getElementById('nameInput').value;
+
+      if (!roomName || !playerName || selectedAmount === 0) {
+        alert("Please enter name, room and select payment amount.");
+        return;
+      }
+
+      currentRoom = roomName;
+      currentPlayer = playerName;
+      alreadyPaid = false;
+
+      document.getElementById('statusText').innerText = `Paying ₹${selectedAmount}...`;
+
+      socket.emit('pay-game-fee', {
+        roomName,
+        playerName,
+        amount: selectedAmount
+      });
+    }
+
+
+    socket.on('start-game', ({ message }) => {
+      document.getElementById('statusText').innerText = message;
+      console.log('🚀 Game started:', message);
+    });
+
+    socket.on('user-joined', ({ playerId, playerName }) => {
+      console.log(`👤 ${playerName} (${playerId}) joined`);
+    });
+
+    socket.on('user-leaved', ({ playerId, playerName }) => {
+      console.log(`👋 ${playerName} (${playerId}) left`);
+    });
+  </script>
+</body>
+
+</html>
